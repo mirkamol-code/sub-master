@@ -36,7 +36,10 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(List.of(
+                "https://subscriptionmaster.app",
+                "https://www.subscriptionmaster.app",
                 "https://subscription-master.app",
+                "https://www.subscription-master.app",
                 "http://localhost:5173",
                 "http://127.0.0.1:5173"
         ));

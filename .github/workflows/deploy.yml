@@ -3,13 +3,15 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-      DOCKER_IMAGE_NAME: smart-lead
-      DOCKER_COMPOSE_APP_SERVICE_NAME: comment-service
+      DOCKER_IMAGE_NAME: subscription-master
+      DOCKER_COMPOSE_APP_SERVICE_NAME: app
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
       EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
       EC2_PUBLIC_IP_ADDRESS: ${{ secrets.EC2_PUBLIC_IP_ADDRESS }}
@@ -46,12 +48,49 @@ jobs:
 
       - name: SSH To EC2 and Deploy
         run: |
+          TARGET_DIR=$(ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS << 'EOF'
+            set -e
+            if docker info >/dev/null 2>&1; then
+              DOCKER="docker"
+            else
+              DOCKER="sudo docker"
+            fi
+            DIR=$($DOCKER inspect subscription-master --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)
+            if [ -z "$DIR" ] || [ ! -d "$DIR" ]; then
+              for d in /home/ubuntu/app /home/ubuntu/subscription-master /home/ubuntu/sub-master /home/ubuntu; do
+                if [ -f "$d/docker-compose.yml" ]; then
+                  DIR="$d"
+                  break
+                fi
+              done
+            fi
+            if [ -z "$DIR" ]; then
+              DIR="/home/ubuntu/app"
+            fi
+            echo "$DIR"
+          EOF
+          )
+          echo "Resolved deployment directory: $TARGET_DIR"
+
+          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS "mkdir -p $TARGET_DIR/nginx"
+          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS "[ -f $TARGET_DIR/docker-compose.yml ]" || scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$EC2_PUBLIC_IP_ADDRESS:$TARGET_DIR/docker-compose.yml
+          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS "[ -f $TARGET_DIR/nginx/nginx.conf ]" || scp -o StrictHostKeyChecking=no nginx/nginx.conf ubuntu@$EC2_PUBLIC_IP_ADDRESS:$TARGET_DIR/nginx/nginx.conf
+
           ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS << EOF
-            cd /home/ubuntu/app
-            sed -i 's|image: '"$DOCKER_USERNAME"'/'"$DOCKER_IMAGE_NAME"':.*$|image: '"$DOCKER_USERNAME"'/'"$DOCKER_IMAGE_NAME"':'"$BUILD_NUMBER"'|' docker-compose.yml
-            docker compose pull
-            docker compose up -d '$DOCKER_COMPOSE_APP_SERVICE_NAME'
-            docker image prune -f
-            docker ps
+            set -e
+            cd $TARGET_DIR
+
+            if docker info >/dev/null 2>&1; then
+              DOCKER="docker"
+            else
+              DOCKER="sudo docker"
+            fi
+
+            sed -i -E "s|image: .*(subscription-master).*|image: $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:$BUILD_NUMBER|" docker-compose.yml
+
+            \$DOCKER compose pull $DOCKER_COMPOSE_APP_SERVICE_NAME || \$DOCKER compose pull || true
+            \$DOCKER compose up -d $DOCKER_COMPOSE_APP_SERVICE_NAME || \$DOCKER compose up -d
+            \$DOCKER image prune -f
+            \$DOCKER ps
             echo "$BUILD_NUMBER" > build-number.txt
           EOF
