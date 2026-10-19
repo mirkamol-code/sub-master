@@ -4,7 +4,7 @@ A production-ready **Subscription Management Backend API** built with **Java 21*
 
 Subscription Master helps users track, manage, and optimize all recurring paid subscriptions (e.g., Netflix, Spotify, ChatGPT Plus, YouTube Premium, Adobe Creative Cloud, JetBrains, AWS, etc.) in one unified platform. It automatically calculates next payment dates, converts multi-currency expenses to **UZS** using live **Central Bank of Uzbekistan (CBU)** rates, sends payment-due reminders, provides interactive calendar dynamics, and exports annual financial reports.
 
-The project fulfills all requirements of the **Technical Task / Take-Home Assignment (Junior / Junior+ Backend Developer)**, with additional enhancements for frontend integration, resilient external communication, security rate limiting, and automated CI/CD deployment on AWS EC2.
+The project fulfills all requirements of the **Technical Task**, with additional enhancements for frontend integration, resilient external communication, security rate limiting, and automated CI/CD deployment on AWS EC2.
 
 ---
 
