@@ -15,7 +15,6 @@ class CurrencyControllerIT extends AbstractTestConfig {
         exchangeRateRepository.save(new ExchangeRate(CurrencyCode.USD, new BigDecimal("12850.00"), LocalDate.now()));
         exchangeRateRepository.save(new ExchangeRate(CurrencyCode.EUR, new BigDecimal("13967.50"), LocalDate.now()));
 
-
         webTestClient.get()
                 .uri(API + "/currencies/rates")
                 .exchange()
