@@ -48,49 +48,41 @@ jobs:
 
       - name: SSH To EC2 and Deploy
         run: |
-          TARGET_DIR=$(ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS << 'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS "sudo bash -s" << EOF
             set -e
-            if docker info >/dev/null 2>&1; then
-              DOCKER="docker"
-            else
-              DOCKER="sudo docker"
+
+            # 1. Detect directory where subscription-master is running
+            COMPOSE_DIR=""
+            if docker inspect subscription-master >/dev/null 2>&1; then
+              COMPOSE_DIR=\$(docker inspect subscription-master --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)
             fi
-            DIR=$($DOCKER inspect subscription-master --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)
-            if [ -z "$DIR" ] || [ ! -d "$DIR" ]; then
-              for d in /home/ubuntu/app /home/ubuntu/subscription-master /home/ubuntu/sub-master /home/ubuntu; do
-                if [ -f "$d/docker-compose.yml" ]; then
-                  DIR="$d"
+
+            if [ -z "\$COMPOSE_DIR" ] || [ ! -f "\$COMPOSE_DIR/docker-compose.yml" ]; then
+              for d in /root /home/ubuntu/app /home/ubuntu/subscription-master /home/ubuntu; do
+                if [ -f "\$d/docker-compose.yml" ]; then
+                  COMPOSE_DIR="\$d"
                   break
                 fi
               done
             fi
-            if [ -z "$DIR" ]; then
-              DIR="/home/ubuntu/app"
-            fi
-            echo "$DIR"
-          EOF
-          )
-          echo "Resolved deployment directory: $TARGET_DIR"
 
-          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS "mkdir -p $TARGET_DIR/nginx"
-          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS "[ -f $TARGET_DIR/docker-compose.yml ]" || scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$EC2_PUBLIC_IP_ADDRESS:$TARGET_DIR/docker-compose.yml
-          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS "[ -f $TARGET_DIR/nginx/nginx.conf ]" || scp -o StrictHostKeyChecking=no nginx/nginx.conf ubuntu@$EC2_PUBLIC_IP_ADDRESS:$TARGET_DIR/nginx/nginx.conf
-
-          ssh -o StrictHostKeyChecking=no ubuntu@$EC2_PUBLIC_IP_ADDRESS << EOF
-            set -e
-            cd $TARGET_DIR
-
-            if docker info >/dev/null 2>&1; then
-              DOCKER="docker"
-            else
-              DOCKER="sudo docker"
+            if [ -z "\$COMPOSE_DIR" ]; then
+              COMPOSE_DIR="/home/ubuntu/app"
+              mkdir -p "\$COMPOSE_DIR"
             fi
 
-            sed -i -E "s|image: .*(subscription-master).*|image: $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:$BUILD_NUMBER|" docker-compose.yml
+            echo "Deploying in directory: \$COMPOSE_DIR"
+            cd "\$COMPOSE_DIR"
 
-            \$DOCKER compose pull $DOCKER_COMPOSE_APP_SERVICE_NAME || \$DOCKER compose pull || true
-            \$DOCKER compose up -d $DOCKER_COMPOSE_APP_SERVICE_NAME || \$DOCKER compose up -d
-            \$DOCKER image prune -f
-            \$DOCKER ps
+            # 2. Update image in docker-compose.yml
+            if [ -f docker-compose.yml ]; then
+              sed -i -E "s|image: .*(subscription-master).*|image: $DOCKER_USERNAME/$DOCKER_IMAGE_NAME:$BUILD_NUMBER|" docker-compose.yml
+            fi
+
+            # 3. Pull and restart the app service
+            docker compose pull $DOCKER_COMPOSE_APP_SERVICE_NAME || docker compose pull || true
+            docker compose up -d $DOCKER_COMPOSE_APP_SERVICE_NAME || docker compose up -d
+            docker image prune -f
+            docker ps
             echo "$BUILD_NUMBER" > build-number.txt
           EOF
